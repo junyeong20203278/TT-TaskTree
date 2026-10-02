@@ -1,0 +1,51 @@
+/* frontend/src/components/RequiredStepNode.module.css */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+}
+
+.diamond {
+  width: 90px;
+  height: 90px;
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  border: 2px solid #ef4444;
+  transform: rotate(45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+  transition: all 0.2s ease-in-out;
+}
+
+.diamond:hover {
+  border-color: #dc2626;
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.25);
+}
+
+.content {
+  transform: rotate(-45deg);
+  text-align: center;
+  padding: 6px;
+  width: 80px;
+}
+
+.title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #991b1b;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #dc2626;
+  margin-bottom: 2px;
+}
+
