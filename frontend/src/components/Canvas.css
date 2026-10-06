@@ -1,0 +1,227 @@
+.canvas-shell,
+.canvas-shell * {
+  box-sizing: border-box;
+}
+
+.canvas-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.canvas-shell > .react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+/* 빈 공간을 잡아 이동하는 커서 */
+.canvas-shell .react-flow__pane {
+  cursor: grab;
+}
+
+.canvas-shell .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+/* 왼쪽 위 제목 */
+.canvas-heading {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+  pointer-events: none;
+}
+
+.canvas-heading strong {
+  font-size: 16px;
+}
+
+.canvas-heading span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+/* 하단 중앙 줌 툴바 */
+.canvas-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  transform: translateX(-50%);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+}
+
+.canvas-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.canvas-toolbar button:hover {
+  background: #e2e8f0;
+}
+
+.canvas-toolbar button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.canvas-toolbar .canvas-toolbar__text-button {
+  width: auto;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.canvas-toolbar__zoom {
+  min-width: 52px;
+  color: #475569;
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-toolbar__divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: #e2e8f0;
+}
+
+/* 왼쪽 아래 사용 안내 */
+.canvas-help {
+  position: absolute;
+  bottom: 24px;
+  left: 20px;
+  z-index: 10;
+  color: #64748b;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+/* 오른쪽 아래 미니맵 */
+.canvas-shell .react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+@media (max-width: 700px) {
+  .canvas-help {
+    display: none;
+  }
+
+  .canvas-toolbar {
+    bottom: 16px;
+  }
+
+  .canvas-shell .react-flow__minimap {
+    bottom: 80px;
+  }
+}
+/* 오른쪽 위 노드 추가 버튼 */
+.canvas-actions {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 20;
+}
+
+.canvas-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.2);
+}
+
+.canvas-add-button:hover {
+  background: #1d4ed8;
+}
+
+.canvas-add-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+/* 노드 위·아래에 표시되는 연결점 */
+.canvas-shell .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #ffffff;
+  background: #2563eb;
+}
+
+/* 선택된 노드 표시 */
+.canvas-shell .react-flow__node.selected {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+/* 연결선과 선택 상태 */
+.canvas-shell .react-flow__edge-path {
+  stroke: #64748b;
+  stroke-width: 2;
+}
+
+.canvas-shell
+  .react-flow__edge.selected
+  .react-flow__edge-path {
+  stroke: #2563eb;
+  stroke-width: 3;
+}
+
+/* 안내 문구가 중앙 툴바와 겹치지 않도록 숨김 */
+@media (max-width: 1100px) {
+  .canvas-help {
+    display: none;
+  }
+}
+
