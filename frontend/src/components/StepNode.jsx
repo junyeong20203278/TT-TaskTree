@@ -1,7 +1,7 @@
 import React from 'react';
 import { Handle, Position } from 'reactflow';
 
-// 카테고리별 뱃지 색상
+// 카테고리별 뱃지 색상 정의
 const CATEGORY_COLORS = {
   frontend: '#3B82F6', // 파랑
   backend: '#10B981',  // 초록
@@ -9,9 +9,10 @@ const CATEGORY_COLORS = {
   common: '#6B7280',   // 회색
 };
 
-export const StepNode = ({ data }) => {
-  const isMilestone = data.isMilestone || data.is_required;
-  const categoryColor = CATEGORY_COLORS[data.category] || '#6B7280';
+export const StepNode = ({ data = {} }) => {
+  const isMilestone = Boolean(data.isMilestone || data.is_required);
+  const category = (data.category || 'common').toLowerCase();
+  const categoryColor = CATEGORY_COLORS[category] || '#6B7280';
 
   return (
     <div
@@ -28,7 +29,7 @@ export const StepNode = ({ data }) => {
         transition: 'all 0.2s',
       }}
     >
-      {/* 선행 노드와 연결되는 좌측 핸들 */}
+      {/* 선행 노드 연결점 (좌측) */}
       <Handle type="target" position={Position.Left} style={{ background: '#6366F1' }} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -43,15 +44,15 @@ export const StepNode = ({ data }) => {
             textTransform: 'uppercase',
           }}
         >
-          {data.category}
+          {category}
         </span>
         <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>
-          Week {data.week}
+          Week {data.week || 1}
         </span>
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 700, color: '#1F2937', lineHeight: 1.3 }}>
-        {data.label}
+        {data.label || '제목 없음'}
       </div>
 
       {isMilestone && (
@@ -60,8 +61,10 @@ export const StepNode = ({ data }) => {
         </div>
       )}
 
-      {/* 후행 노드로 이어지는 우측 핸들 */}
+      {/* 후행 노드 연결점 (우측) */}
       <Handle type="source" position={Position.Right} style={{ background: '#6366F1' }} />
     </div>
   );
 };
+
+export default StepNode;

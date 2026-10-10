@@ -1,35 +1,59 @@
-import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'http://localhost:8000';
 
 /**
- * 1단계: 프로젝트 기본 정보를 바탕으로 거시적 WBS 뼈대 생성 요청
- * @param {Object} projectData - { idea: string, duration_weeks: number, team_info: object }
+ * 1. 프로젝트 WBS 전체 뼈대 생성 (Gemini 기반 1회 호출)
  */
-export const generateMacroWbs = async (projectData) => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/generate`, projectData);
-    return response.data;
-  } catch (error) {
-    console.error('[API Error] generateMacroWbs:', error);
-    throw error;
+export async function generateWbs({ idea, teamSize = 4, durationWeeks = 8 }) {
+  const response = await fetch(`${API_BASE_URL}/api/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      idea: idea.trim(),
+      team_size: Number(teamSize),
+      duration_weeks: Number(durationWeeks),
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'WBS 생성에 실패했습니다.');
   }
-};
+
+  return await response.json();
+}
 
 /**
- * 2단계: 특정 부모 노드의 3지선다 세부 옵션 생성 요청
- * @param {string} nodeId - 선택한 부모 노드 ID
- * @param {string} nodeTitle - 선택한 노드 제목
+ * 2. 관문 노드 3지선다 분기 옵션 조회
  */
-export const getBranchOptions = async (nodeId, nodeTitle) => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/project/branch`, {
-      node_id: nodeId,
-      title: nodeTitle,
-    });
-    return response.data;
-  } catch (error) {
-    console.error('[API Error] getBranchOptions:', error);
-    throw error;
+export async function fetchBranchOptions({
+  idea,
+  parentStepId,
+  parentTitle,
+  currentWeek = 1,
+  teamSize = 4,
+  selectedHistory = [],
+}) {
+  const response = await fetch(`${API_BASE_URL}/api/branch/options`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      idea: idea.trim(),
+      parent_step_id: parentStepId,
+      parent_title: parentTitle,
+      current_week: Number(currentWeek),
+      team_size: Number(teamSize),
+      selected_history: selectedHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || '3지선다 옵션 생성에 실패했습니다.');
   }
-};
+
+  return await response.json();
+}

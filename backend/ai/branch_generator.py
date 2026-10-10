@@ -1,57 +1,85 @@
-import os
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-from ai.schemas import BranchOptionsResponse
+from typing import List, Optional
+from ai.llm_client import LLMClient
+from ai.schemas import BranchResponse, BranchOptionItem
 
-load_dotenv()
+llm_client = LLMClient(model_id="gemini-3.8-flash", temperature=0.3)
 
-client = genai.Client()
 
-MODELS = [
-    "gemini-flash-latest",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-]
+async def generate_branch_options(
+    idea: str,
+    parent_title: str,
+    parent_step_id: str,
+    current_week: int = 1,
+    team_size: int = 4,
+    selected_history: Optional[List[str]] = None,
+) -> BranchResponse:
+    history_context = "\n".join([f"- 이전 선택: {h}" for h in (selected_history or [])])
 
-def generate_branch_options(node_id: str, node_title: str, node_desc: str = "") -> BranchOptionsResponse:
-    """
-    부모 노드 정보를 바탕으로 실무에서 선택할 수 있는 3가지 상호 배타적 미시적 구현 선택지를 생성합니다.
-    (예: 빠른 프로토타입형, 표준 실무형, 고도화/확장형)
-    """
     prompt = f"""
-    당신은 테크 리드 멘토입니다. 개발자가 다음 작업 단계를 구현하려고 합니다.
+    당신은 IT 프로젝트 소프트웨어 공학 수석 아키텍트입니다.
+    사용자가 진행 중인 프로젝트의 다음 단계를 결정하기 위해 3가지 실무적 분기점(Branch Options)을 제시하세요.
 
-    - 대상 작업(부모 노드): [{node_title}] (ID: {node_id})
-    - 상세 내용: {node_desc}
+    [프로젝트 정보]
+    - 주제: {idea}
+    - 팀원 규모: {team_size}명
+    - 기준 부모 작업(현재 관문 노드): {parent_title} (ID: {parent_step_id})
+    - 현재 주차: {current_week}주차
+    - 이전 결정 이력:
+    {history_context if history_context else "없음 (프로젝트 초기 단계)"}
 
-    이 작업을 완수하기 위한 서로 다른 접근 방식 3가지(Option A, Option B, Option C)를 제안하세요.
-    각 옵션은 트레이드오프(개발 속도 vs 완성도, 직접 구현 vs 외부 SaaS 도입 등)가 뚜렷해야 합니다.
-    반드시 정확히 3개의 상호 배타적인 옵션을 제시해야 합니다.
+    [필수 규칙]
+    1. 기준 관문 노드 다음으로 프로젝트에서 실행할 수 있는 서로 다른 아키텍처적 접근 방식 3가지(Option A, B, C)를 작성하세요.
+    2. 각 옵션마다 구체적인 제목(title), 설명(description), 장점(pros), 단점(cons), 추천 도구(recommended_tools), 예상 일수(estimated_days), 카테고리(category)를 작성하세요.
+    3. 팀원 {team_size}명이 실무적으로 감당 가능한 현실적인 대안이어야 합니다.
+    4. 반드시 3개의 옵션을 포함하여 반환하세요.
     """
 
-    last_error = None
+    try:
+        result: BranchResponse = await llm_client.invoke(
+            prompt=prompt,
+            expected_schema=BranchResponse,
+            max_retries=2,
+        )
+        return result
+    except Exception as e:
+        print(f"[AI Branch] Gemini 옵션 생성 실패로 기본 대안 반환: {e}")
+        return get_fallback_branch_options(idea, parent_step_id, parent_title)
 
-    for model_name in MODELS:
-        try:
-            print(f"[AI Branch] 시도 중인 모델: {model_name}")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=BranchOptionsResponse,
-                    temperature=0.3,
-                ),
+
+def get_fallback_branch_options(idea: str, parent_step_id: str, parent_title: str) -> BranchResponse:
+    return BranchResponse(
+        parent_step_id=parent_step_id,
+        stage_name=f"[{idea}] {parent_title} 세부 진행 방향 결정",
+        options=[
+            BranchOptionItem(
+                option_id="opt-A",
+                title="Option A: 표준 경량 REST 아키텍처 방식",
+                description="FastAPI 기반 표준 REST 엔드포인트를 구축하여 안정성과 직관적인 구현을 챙깁니다.",
+                pros="팀원 간 협업 분담이 쉽고 빠른 개발 가능",
+                cons="고도화된 실시간 연동에는 추가 작업 필요",
+                category="backend",
+                estimated_days=3,
+                recommended_tools=["FastAPI", "PostgreSQL", "Pydantic"]
+            ),
+            BranchOptionItem(
+                option_id="opt-B",
+                title="Option B: 실시간 비동기 이벤트 스트림 방식",
+                description="WebSocket 및 메시지 큐를 도입하여 사용자 화면과 즉각적인 양방향 인터랙션을 구성합니다.",
+                pros="실시간 상태 반응성 및 시연 완성도 극대화",
+                cons="서버 세션 유지 및 인프라 추가 부담",
+                category="backend",
+                estimated_days=4,
+                recommended_tools=["WebSocket", "Redis", "Asyncio"]
+            ),
+            BranchOptionItem(
+                option_id="opt-C",
+                title="Option C: 모듈형 마이크로 컴포넌트 아키텍처",
+                description="독립적인 서비스 단위로 비즈니스 로직을 격리하여 안정성을 강화합니다.",
+                pros="추후 기능 추가 시 사이드 이펙트 최소화",
+                cons="초기 구조 설계 및 라우팅 설정 공수 증가",
+                category="backend",
+                estimated_days=4,
+                recommended_tools=["Docker", "SQLAlchemy", "FastAPI"]
             )
-            parsed_result: BranchOptionsResponse = response.parsed
-            print(f"[AI Branch] 생성 성공 (옵션 3종 추출 완료)")
-            return parsed_result
-
-        except Exception as e:
-            print(f"[AI Branch Fallback] 모델 {model_name} 실패: {e}")
-            last_error = e
-            continue
-
-    raise RuntimeError(f"모든 AI 모델 폴백 실패. 최후 오류: {last_error}")
+        ]
+    )
