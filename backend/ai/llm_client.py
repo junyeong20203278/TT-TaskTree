@@ -13,7 +13,6 @@ from ai.exceptions import AIGenerationFailedError, BedrockAPIError
 
 T = TypeVar("T", bound=BaseModel)
 
-# 가장 대중적으로 열려 있는 표준 모델 식별자 우선순위
 RECOMMENDED_CANDIDATES = [
     "gemini-2.5-flash",
     "gemini-1.5-flash-latest",
@@ -31,7 +30,7 @@ class LLMClient:
         gemini_client: Optional[genai.Client] = None,
         model_id: Optional[str] = None,
         model_list: Optional[List[str]] = None,
-        max_tokens: int = 2500,
+        max_tokens: int = 8192,  # 2500 -> 8192로 늘려 JSON 잘림 방지
         temperature: float = 0.2,
     ) -> None:
         self.client = gemini_client or genai.Client()
@@ -53,19 +52,17 @@ class LLMClient:
             return self._available_models
 
         try:
-            # SDK에서 실제 계정에 열려 있는 모델 목록 조회
             server_models = [
                 m.name.replace("models/", "") 
                 for m in self.client.models.list() 
                 if "generateContent" in getattr(m, "supported_generation_methods", ["generateContent"])
             ]
-            # 추천 순위와 교집합을 우선 배치
             matched = [m for m in self.model_list if m in server_models]
             others = [m for m in server_models if "flash" in m or "pro" in m]
             
             final_list = matched + [m for m in others if m not in matched]
             self._available_models = final_list if final_list else self.model_list
-            print(f"[LLM] 실제 가용 모델 확인 완료: {self._available_models[:3]}")
+            print(f"[LLM] 실제 가용 모델 확인 완료: {self._available_models[:5]}")
         except Exception as e:
             print(f"[LLM] 모델 목록 자동 조회 생략 (기본 리스트 사용): {e}")
             self._available_models = self.model_list
@@ -105,6 +102,11 @@ class LLMClient:
                         config=config,
                     )
 
+                    # SDK 내장 파서가 있으면 먼저 사용
+                    if hasattr(response, "parsed") and response.parsed is not None:
+                        print(f"[LLM 성공] {model_id} 모델로 생성 완료 (Parsed)")
+                        return response.parsed
+
                     raw_text = response.text
                     if not raw_text:
                         raise AIGenerationFailedError("빈 응답 수신")
@@ -116,7 +118,6 @@ class LLMClient:
 
                 except (ClientError, ServerError) as e:
                     error_msg = str(e)
-                    # 429(할당량 소진) 또는 404(모델 미지원) 발생 시 다음 후보 모델로 바로 패스
                     if any(err in error_msg for err in ["429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND"]):
                         print(f"[LLM 전환] {model_id} 사용 불가 ({'429' if '429' in error_msg else '404'}). 다음 모델로 전환합니다.")
                         last_exception = e
@@ -126,7 +127,9 @@ class LLMClient:
                     last_exception = e
 
                 except (ValidationError, json.JSONDecodeError) as e:
-                    print(f"[LLM 스키마 에러] {model_id}: {e}")
+                    print(f"[LLM 스키마/잘림 에러] {model_id}: {e}")
                     last_exception = e
+                    # 잘림이나 스키마 에러는 동일 모델 재시도 없이 다음 예비 모델로 즉시 전환
+                    break
 
         raise BedrockAPIError(f"모든 후보 모델 호출 실패: {last_exception}")

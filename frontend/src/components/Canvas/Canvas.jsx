@@ -7,6 +7,10 @@ import TaskNode from './TaskNode';
 import GateNode from './GateNode';
 import { makeInitialWbs, readWbs, validateWbs, WBS_STORAGE_KEY, DEFAULT_VIEWPORT } from './wbsData';
 
+// API 및 변환기 임포트 (경로는 프로젝트 위치에 맞게 확인)
+import { generateWbs } from '../../api/wbsApi'; 
+import { transformWbsToGraph } from '../../utils/parser';
+
 const nodeTypes = { task: TaskNode, gate: GateNode };
 const nodeOrigin = [0.5, 0.5];
 const snapGrid = [20, 20];
@@ -54,19 +58,33 @@ function NodeEditor({ node, maxWeek, onApply, onClose }) {
   </aside>;
 }
 
-function CanvasContent({ project }) {
+// initialGraph prop을 전달받도록 수정
+function CanvasContent({ project, initialGraph }) {
   const [startup] = useState(readWbs);
   const [sample] = useState(() => makeInitialWbs(project.durationWeeks));
-  const [nodes, setNodes, onNodesChange] = useNodesState(startup.kind === 'success' ? startup.data.nodes : sample.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(startup.kind === 'success' ? startup.data.edges : sample.edges);
+
+  // AI 생성 결과가 있으면 initialGraph를 우선 사용, 없으면 로컬 스토리지 또는 더미 데이터 사용
+  const initialNodes = initialGraph?.nodes?.length ? initialGraph.nodes : (startup.kind === 'success' ? startup.data.nodes : sample.nodes);
+  const initialEdges = initialGraph?.edges?.length ? initialGraph.edges : (startup.kind === 'success' ? startup.data.edges : sample.edges);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [viewport, setViewport] = useState(startup.kind === 'success' ? startup.data.viewport : DEFAULT_VIEWPORT);
-  const [status, setStatus] = useState(startup.kind === 'success' ? '기존 WBS 저장 데이터를 복원했습니다. 프로젝트별 저장은 아직 지원하지 않습니다.' : startup.kind === 'error' ? '저장 데이터 오류로 예시 WBS를 표시합니다.' : '예시 WBS입니다. 노드를 더블클릭하면 정보를 수정할 수 있습니다.');
+  
+  const [status, setStatus] = useState(
+    initialGraph?.nodes?.length 
+      ? 'Gemini AI로 1~8주차 거시적 WBS 뼈대를 성공적으로 생성했습니다.' 
+      : startup.kind === 'success' 
+      ? '기존 WBS 저장 데이터를 복원했습니다.' 
+      : '예시 WBS입니다. 노드를 더블클릭하면 정보를 수정할 수 있습니다.'
+  );
+
   const [editingId, setEditingId] = useState(null);
   const canvasRef = useRef(null);
   const deletingRef = useRef(false);
   const { screenToFlowPosition, getNodes, getEdges, getViewport, deleteElements } = useReactFlow();
   const editingNode = nodes.find((n) => n.id === editingId);
-  const maxWeek = Math.max(project.durationWeeks, ...nodes.map((n) => n.data.endWeek));
+  const maxWeek = Math.max(project.durationWeeks, ...nodes.map((n) => n.data.endWeek || 1));
 
   const addNode = useCallback((type) => {
     if (!canvasRef.current) return;
@@ -116,7 +134,7 @@ function CanvasContent({ project }) {
   };
 
   return <main ref={canvasRef} className="canvas-shell" aria-label="WBS 편집 캔버스">
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodeOrigin={nodeOrigin} viewport={viewport} onViewportChange={setViewport} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} isValidConnection={(c) => Boolean(c.source && c.target && c.source !== c.target)} onNodeDoubleClick={(_, node) => setEditingId(node.id)} fitView={startup.kind !== 'success'} fitViewOptions={{ padding: 0.2, maxZoom: 1 }} minZoom={0.1} maxZoom={3} defaultEdgeOptions={{ type: 'smoothstep' }} deleteKeyCode={['Backspace', 'Delete']} multiSelectionKeyCode="Shift" snapToGrid snapGrid={snapGrid} panOnDrag zoomOnScroll zoomOnPinch zoomOnDoubleClick={false}>
+    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodeOrigin={nodeOrigin} viewport={viewport} onViewportChange={setViewport} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} isValidConnection={(c) => Boolean(c.source && c.target && c.source !== c.target)} onNodeDoubleClick={(_, node) => setEditingId(node.id)} fitView={true} fitViewOptions={{ padding: 0.2, maxZoom: 1 }} minZoom={0.1} maxZoom={3} defaultEdgeOptions={{ type: 'smoothstep' }} deleteKeyCode={['Backspace', 'Delete']} multiSelectionKeyCode="Shift" snapToGrid snapGrid={snapGrid} panOnDrag zoomOnScroll zoomOnPinch zoomOnDoubleClick={false}>
       <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
       <MiniMap position="bottom-right" pannable zoomable nodeColor={(n) => n.type === 'gate' ? '#f59e0b' : '#60a5fa'} />
     </ReactFlow>
@@ -137,6 +155,40 @@ function CanvasContent({ project }) {
 
 export default function Canvas() {
   const [project, setProject] = useState(null);
-  if (!project) return <ProjectInitModal onComplete={setProject} />;
-  return <ReactFlowProvider><CanvasContent project={project} /></ReactFlowProvider>;
+  const [initialGraph, setInitialGraph] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+ // Canvas.jsx 하단 handleModalComplete 함수
+const handleModalComplete = async (projectData) => {
+  setLoading(true);
+  try {
+    // wbsApi.js의 generateWbs 규격에 맞춰 인자 전달
+    const res = await generateWbs({
+      idea: projectData.idea,
+      durationWeeks: projectData.durationWeeks || 8,
+      teamSize: projectData.teamSize || 4,
+    });
+
+    // parser.js 변환기를 거쳐 노드/엣지 추출
+    const graph = transformWbsToGraph(res);
+    setInitialGraph(graph);
+    setProject(projectData);
+  } catch (err) {
+    console.error('WBS AI 생성 실패:', err);
+    alert(`백엔드 AI 생성 요청에 실패했습니다: ${err.message || '서버 확인 필요'}`);
+    setProject(projectData);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  if (!project) {
+    return <ProjectInitModal onComplete={handleModalComplete} isLoading={loading} />;
+  }
+
+  return (
+    <ReactFlowProvider>
+      <CanvasContent project={project} initialGraph={initialGraph} />
+    </ReactFlowProvider>
+  );
 }

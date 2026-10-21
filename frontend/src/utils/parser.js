@@ -6,13 +6,11 @@ export function transformWbsToGraph(wbsData) {
     return { nodes: [], edges: [] };
   }
 
-  // 노드 배치 좌표 설정
   const START_X = 100;
   const LEVEL_GAP_X = 320; // 주차(Week) 간격
-  const NODE_GAP_Y = 150;  // 같은 주차 내 노드 간격
-  const BASE_Y = 100;
+  const NODE_GAP_Y = 160;  // 같은 주차 내 노드 간격
+  const BASE_Y = 120;
 
-  // 주차별(Week) Y축 인덱스 카운터
   const weekCounts = {};
 
   // 1. React Flow 노드 생성
@@ -23,7 +21,8 @@ export function transformWbsToGraph(wbsData) {
 
     return {
       id: task.id,
-      type: task.is_milestone ? 'requiredStepNode' : 'stepNode', // 마일스톤 노드는 강조 타입 적용 가능
+      // 팀원의 nodeTypes 규격('gate' / 'task')과 일치화
+      type: task.is_milestone ? 'gate' : 'task',
       position: {
         x: START_X + (week - 1) * LEVEL_GAP_X,
         y: BASE_Y + yIndex * NODE_GAP_Y,
@@ -31,20 +30,24 @@ export function transformWbsToGraph(wbsData) {
       data: {
         id: task.id,
         label: task.title,
-        week: task.week,
+        // Canvas.jsx의 NodeEditor 및 UI에서 사용하는 필드 매핑
+        stage: task.category || '개발',
+        assignee: '미정',
+        startWeek: week,
+        endWeek: week,
+        status: '대기',
+        // 사이드패널 및 백엔드 원본 메타데이터 보존
         category: task.category || 'common',
         isMilestone: Boolean(task.is_milestone),
         description: task.description || '',
         tools: task.tools || [],
         checklist: task.checklist || [],
-        // 관문 노드 전용 3지선다 대안 목록 보관
         branch_options: task.branch_options || [],
-        status: 'default', // 'default' | 'decided'
       },
     };
   });
 
-  // 2. React Flow 엣지(연결선) 생성
+  // 2. React Flow 엣지 생성
   const edges = [];
   wbsData.nodes.forEach((task) => {
     if (task.dependencies && Array.isArray(task.dependencies)) {
@@ -54,11 +57,7 @@ export function transformWbsToGraph(wbsData) {
           source: depId,
           target: task.id,
           type: 'smoothstep',
-          animated: task.is_milestone, // 관문으로 이어지는 선은 애니메이션 강조
-          style: {
-            stroke: task.is_milestone ? '#6366F1' : '#94A3B8',
-            strokeWidth: task.is_milestone ? 2.5 : 2,
-          },
+          animated: Boolean(task.is_milestone),
         });
       });
     }
