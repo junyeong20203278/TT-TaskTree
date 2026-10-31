@@ -5,9 +5,10 @@ import './Canvas.css';
 import ProjectInitModal from './ProjectInitModal';
 import TaskNode from './TaskNode';
 import GateNode from './GateNode';
+import SidePanel from '../SidePanel'; // 💡 실무 가이드 사이드패널 임포트 (경로 확인)
 import { makeInitialWbs, readWbs, validateWbs, WBS_STORAGE_KEY, DEFAULT_VIEWPORT } from './wbsData';
 
-// API 및 변환기 임포트 (경로는 프로젝트 위치에 맞게 확인)
+// API 및 변환기 임포트
 import { generateWbs } from '../../api/wbsApi'; 
 import { transformWbsToGraph } from '../../utils/parser';
 
@@ -58,12 +59,10 @@ function NodeEditor({ node, maxWeek, onApply, onClose }) {
   </aside>;
 }
 
-// initialGraph prop을 전달받도록 수정
 function CanvasContent({ project, initialGraph }) {
   const [startup] = useState(readWbs);
   const [sample] = useState(() => makeInitialWbs(project.durationWeeks));
 
-  // AI 생성 결과가 있으면 initialGraph를 우선 사용, 없으면 로컬 스토리지 또는 더미 데이터 사용
   const initialNodes = initialGraph?.nodes?.length ? initialGraph.nodes : (startup.kind === 'success' ? startup.data.nodes : sample.nodes);
   const initialEdges = initialGraph?.edges?.length ? initialGraph.edges : (startup.kind === 'success' ? startup.data.edges : sample.edges);
 
@@ -76,22 +75,60 @@ function CanvasContent({ project, initialGraph }) {
       ? 'Gemini AI로 1~8주차 거시적 WBS 뼈대를 성공적으로 생성했습니다.' 
       : startup.kind === 'success' 
       ? '기존 WBS 저장 데이터를 복원했습니다.' 
-      : '예시 WBS입니다. 노드를 더블클릭하면 정보를 수정할 수 있습니다.'
+      : '예시 WBS입니다. 노드를 클릭하면 실무 가이드 패널이, 더블클릭하면 편집창이 열립니다.'
   );
 
+  // 기존 NodeEditor 제어 상태
   const [editingId, setEditingId] = useState(null);
+
+  // 💡 SidePanel(실무 가이드 패널) 제어 상태 추가
+  const [selectedSideNode, setSelectedSideNode] = useState(null);
+  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+
   const canvasRef = useRef(null);
   const deletingRef = useRef(false);
   const { screenToFlowPosition, getNodes, getEdges, getViewport, deleteElements } = useReactFlow();
   const editingNode = nodes.find((n) => n.id === editingId);
   const maxWeek = Math.max(project.durationWeeks, ...nodes.map((n) => n.data.endWeek || 1));
 
+  // 💡 1. 캔버스 노드 단일 클릭 이벤트: SidePanel 열기 & 데이터 바인딩
+  const handleNodeClick = useCallback((event, node) => {
+    setSelectedSideNode(node);
+    setIsSidePanelOpen(true);
+  }, []);
+
+  // 💡 2. 캔버스 노드 더블클릭 이벤트: 기존 NodeEditor 열기
+  const handleNodeDoubleClick = useCallback((_, node) => {
+    setEditingId(node.id);
+  }, []);
+
   const addNode = useCallback((type) => {
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const position = screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, { snapToGrid: false });
     const id = `wbs-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const node = { id, type, position, selected: true, data: { label: type === 'gate' ? '새 검토 지점' : '새 작업', stage: '미정', assignee: '미정', startWeek: 1, endWeek: 1, status: '대기' } };
+    
+    // 신규 노드 추가 시에도 메타데이터 기본 구조를 포함
+    const node = { 
+      id, 
+      type, 
+      position, 
+      selected: true, 
+      data: { 
+        id,
+        label: type === 'gate' ? '새 검토 지점' : '새 작업', 
+        stage: '미정', 
+        assignee: '미정', 
+        startWeek: 1, 
+        endWeek: 1, 
+        status: '대기',
+        isMilestone: type === 'gate',
+        description: '사용자가 직접 추가한 작업입니다.',
+        tools: [],
+        checklist: []
+      } 
+    };
+
     setNodes((list) => [...list.map((n) => ({ ...n, selected: false })), node]);
     setEdges((list) => list.map((e) => ({ ...e, selected: false })));
     setEditingId(null);
@@ -112,6 +149,10 @@ function CanvasContent({ project, initialGraph }) {
     deletingRef.current = true;
     try {
       const result = await deleteElements({ nodes: selectedNodes.map((n) => ({ id: n.id })), edges: selectedEdges.map((e) => ({ id: e.id })) });
+      if (selectedNodes.some(n => n.id === selectedSideNode?.id)) {
+        setIsSidePanelOpen(false);
+        setSelectedSideNode(null);
+      }
       setStatus(`노드 ${result.deletedNodes.length}개, 연결선 ${result.deletedEdges.length}개를 삭제했습니다.`);
     } catch { setStatus('삭제에 실패했습니다.'); }
     finally { deletingRef.current = false; }
@@ -130,15 +171,44 @@ function CanvasContent({ project, initialGraph }) {
     const result = readWbs();
     if (result.kind !== 'success') { setStatus(result.kind === 'missing' ? '저장된 WBS가 없습니다.' : '저장 데이터 오류입니다. 현재 화면을 유지합니다.'); return; }
     setNodes(result.data.nodes); setEdges(result.data.edges); setViewport(result.data.viewport); setEditingId(null);
+    setIsSidePanelOpen(false);
     setStatus('저장된 WBS를 복원했습니다.');
   };
 
   return <main ref={canvasRef} className="canvas-shell" aria-label="WBS 편집 캔버스">
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodeOrigin={nodeOrigin} viewport={viewport} onViewportChange={setViewport} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} isValidConnection={(c) => Boolean(c.source && c.target && c.source !== c.target)} onNodeDoubleClick={(_, node) => setEditingId(node.id)} fitView={true} fitViewOptions={{ padding: 0.2, maxZoom: 1 }} minZoom={0.1} maxZoom={3} defaultEdgeOptions={{ type: 'smoothstep' }} deleteKeyCode={['Backspace', 'Delete']} multiSelectionKeyCode="Shift" snapToGrid snapGrid={snapGrid} panOnDrag zoomOnScroll zoomOnPinch zoomOnDoubleClick={false}>
+    <ReactFlow 
+      nodes={nodes} 
+      edges={edges} 
+      nodeTypes={nodeTypes} 
+      nodeOrigin={nodeOrigin} 
+      viewport={viewport} 
+      onViewportChange={setViewport} 
+      onNodesChange={onNodesChange} 
+      onEdgesChange={onEdgesChange} 
+      onConnect={connect} 
+      isValidConnection={(c) => Boolean(c.source && c.target && c.source !== c.target)} 
+      onNodeClick={handleNodeClick} /* 💡 단일 클릭: 사이드패널 오픈 */
+      onNodeDoubleClick={handleNodeDoubleClick} /* 💡 더블 클릭: NodeEditor 오픈 */
+      fitView={true} 
+      fitViewOptions={{ padding: 0.2, maxZoom: 1 }} 
+      minZoom={0.1} 
+      maxZoom={3} 
+      defaultEdgeOptions={{ type: 'smoothstep' }} 
+      deleteKeyCode={['Backspace', 'Delete']} 
+      multiSelectionKeyCode="Shift" 
+      snapToGrid 
+      snapGrid={snapGrid} 
+      panOnDrag 
+      zoomOnScroll 
+      zoomOnPinch 
+      zoomOnDoubleClick={false}
+    >
       <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
       <MiniMap position="bottom-right" pannable zoomable nodeColor={(n) => n.type === 'gate' ? '#f59e0b' : '#60a5fa'} />
     </ReactFlow>
+
     <div className="canvas-heading"><strong>WBS Canvas · {project.durationWeeks}주</strong><span title={project.idea}>{project.idea}</span><small title={project.team}>팀: {project.team}</small></div>
+    
     <div className="canvas-actions" role="group" aria-label="WBS 편집 도구">
       <button type="button" className="canvas-add-button" onClick={() => addNode('task')}>+ 작업</button>
       <button type="button" className="canvas-action-button canvas-action-button--gate" onClick={() => addNode('gate')}>+ Gate</button>
@@ -146,10 +216,37 @@ function CanvasContent({ project, initialGraph }) {
       <button type="button" className="canvas-action-button" onClick={save}>저장</button>
       <button type="button" className="canvas-action-button" onClick={load}>불러오기</button>
     </div>
+
     <div className="canvas-status" role="status" aria-live="polite">{status}</div>
-    <div className="canvas-help">더블클릭: 정보 수정 · 오른쪽 점 → 왼쪽 점: 연결 · Shift+클릭: 다중 선택 · Delete: 삭제</div>
+    <div className="canvas-help">클릭: 실무 가이드 패널 · 더블클릭: 정보 수정 · 오른쪽 점 → 왼쪽 점: 연결 · Delete: 삭제</div>
+    
     <CanvasToolbar />
-    {editingNode && <NodeEditor key={editingNode.id} node={editingNode} maxWeek={maxWeek} onClose={() => setEditingId(null)} onApply={(id, data) => { setNodes((list) => list.map((n) => n.id === id ? { ...n, data } : n)); setEditingId(null); setStatus('WBS 정보를 적용했습니다. 저장 버튼을 눌러 보관해 주세요.'); }} />}
+
+    {/* 1. 기존 더블클릭 시 열리는 NodeEditor */}
+    {editingNode && (
+      <NodeEditor 
+        key={editingNode.id} 
+        node={editingNode} 
+        maxWeek={maxWeek} 
+        onClose={() => setEditingId(null)} 
+        onApply={(id, data) => { 
+          setNodes((list) => list.map((n) => n.id === id ? { ...n, data } : n)); 
+          // 사이드패널이 열려있다면 함께 갱신
+          if (selectedSideNode?.id === id) {
+            setSelectedSideNode(prev => ({ ...prev, data }));
+          }
+          setEditingId(null); 
+          setStatus('WBS 정보를 적용했습니다. 저장 버튼을 눌러 보관해 주세요.'); 
+        }} 
+      />
+    )}
+
+    {/* 💡 2. 단일 클릭 시 열리는 실무 가이드 SidePanel */}
+    <SidePanel
+      node={selectedSideNode}
+      isOpen={isSidePanelOpen}
+      onClose={() => setIsSidePanelOpen(false)}
+    />
   </main>;
 }
 
@@ -158,29 +255,26 @@ export default function Canvas() {
   const [initialGraph, setInitialGraph] = useState(null);
   const [loading, setLoading] = useState(false);
 
- // Canvas.jsx 하단 handleModalComplete 함수
-const handleModalComplete = async (projectData) => {
-  setLoading(true);
-  try {
-    // wbsApi.js의 generateWbs 규격에 맞춰 인자 전달
-    const res = await generateWbs({
-      idea: projectData.idea,
-      durationWeeks: projectData.durationWeeks || 8,
-      teamSize: projectData.teamSize || 4,
-    });
+  const handleModalComplete = async (projectData) => {
+    setLoading(true);
+    try {
+      const res = await generateWbs({
+        idea: projectData.idea,
+        durationWeeks: projectData.durationWeeks || 8,
+        teamSize: projectData.teamSize || 4,
+      });
 
-    // parser.js 변환기를 거쳐 노드/엣지 추출
-    const graph = transformWbsToGraph(res);
-    setInitialGraph(graph);
-    setProject(projectData);
-  } catch (err) {
-    console.error('WBS AI 생성 실패:', err);
-    alert(`백엔드 AI 생성 요청에 실패했습니다: ${err.message || '서버 확인 필요'}`);
-    setProject(projectData);
-  } finally {
-    setLoading(false);
-  }
-};
+      const graph = transformWbsToGraph(res);
+      setInitialGraph(graph);
+      setProject(projectData);
+    } catch (err) {
+      console.error('WBS AI 생성 실패:', err);
+      alert(`백엔드 AI 생성 요청에 실패했습니다: ${err.message || '서버 확인 필요'}`);
+      setProject(projectData);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!project) {
     return <ProjectInitModal onComplete={handleModalComplete} isLoading={loading} />;

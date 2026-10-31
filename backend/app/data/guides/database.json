@@ -1,0 +1,12 @@
+{
+  "topic": "database",
+  "category": "설계",
+  "title": "데이터베이스 모델링 및 ERD 설계 가이드",
+  "recommended_tools": ["dbdiagram.io", "DrawSQL", "Prisma"],
+  "checklist": [
+    "핵심 엔터티 도출 및 식별자(PK) 지정 완료",
+    "1:N, N:M 관계 정의 및 외래키(FK) 제약조건 확인",
+    "제3정규화(3NF) 점검 및 불필요한 중복 데이터 제거"
+  ],
+  "mentor_tip": "초기 학부 프로젝트에서는 과도한 반정규화보다 데이터 정합성을 유지할 수 있는 표준 정규화를 우선 적용하세요."
+}

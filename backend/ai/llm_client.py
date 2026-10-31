@@ -1,6 +1,7 @@
-"""Google Gemini 비동기 클라이언트 (실제 가용 모델 자동 감지 및 폴백 체인)."""
+"""Google Gemini 비동기 클라이언트 (실제 가용 모델 자동 감지, 속도 최적화 및 폴백 체인)."""
 
 import json
+import logging
 import os
 import uuid
 from typing import Any, List, Optional, Type, TypeVar
@@ -11,8 +12,12 @@ from pydantic import BaseModel, ValidationError
 
 from ai.exceptions import AIGenerationFailedError, BedrockAPIError
 
+# Google GenAI 내부 잡다한 경고 로그 억제
+logging.getLogger("google.genai").setLevel(logging.ERROR)
+
 T = TypeVar("T", bound=BaseModel)
 
+# 속도와 안정성이 우수한 후보 모델 우선순위
 RECOMMENDED_CANDIDATES = [
     "gemini-2.5-flash",
     "gemini-1.5-flash-latest",
@@ -30,7 +35,7 @@ class LLMClient:
         gemini_client: Optional[genai.Client] = None,
         model_id: Optional[str] = None,
         model_list: Optional[List[str]] = None,
-        max_tokens: int = 8192,  # 2500 -> 8192로 늘려 JSON 잘림 방지
+        max_tokens: int = 8192,
         temperature: float = 0.2,
     ) -> None:
         self.client = gemini_client or genai.Client()
@@ -53,13 +58,13 @@ class LLMClient:
 
         try:
             server_models = [
-                m.name.replace("models/", "") 
-                for m in self.client.models.list() 
+                m.name.replace("models/", "")
+                for m in self.client.models.list()
                 if "generateContent" in getattr(m, "supported_generation_methods", ["generateContent"])
             ]
             matched = [m for m in self.model_list if m in server_models]
             others = [m for m in server_models if "flash" in m or "pro" in m]
-            
+
             final_list = matched + [m for m in others if m not in matched]
             self._available_models = final_list if final_list else self.model_list
             print(f"[LLM] 실제 가용 모델 확인 완료: {self._available_models[:5]}")
@@ -80,19 +85,28 @@ class LLMClient:
         correlation_id = str(uuid.uuid4())
         effective_max_tokens = max_tokens or self.max_tokens
 
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=expected_schema,
-            temperature=self.temperature,
-            max_output_tokens=effective_max_tokens,
-            system_instruction=system_instruction,
-        )
-
         target_models = self._get_supported_models()
         last_exception = None
 
         for model_id in target_models:
             print(f"[LLM] 호출 시도: {model_id} (req: {correlation_id[:8]})")
+
+            # 💡 1. AFC(자동 함수 호출) 경고 방지 및 2. Thinking(추론 지연) 비활성화 설정
+            config_kwargs: dict[str, Any] = {
+                "response_mime_type": "application/json",
+                "response_schema": expected_schema,
+                "temperature": self.temperature,
+                "max_output_tokens": effective_max_tokens,
+                "system_instruction": system_instruction,
+                # 직전 터미널에 떴던 AFC 경고 메시지 비활성화
+                "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+            }
+
+            # 💡 Gemini 2.5 계열의 내부 추론(Thinking) 예산을 0으로 꺼서 응답 속도 대폭 단축
+            if "2.5" in model_id:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+            config = types.GenerateContentConfig(**config_kwargs)
 
             for attempt in range(max_retries + 1):
                 try:
@@ -102,7 +116,7 @@ class LLMClient:
                         config=config,
                     )
 
-                    # SDK 내장 파서가 있으면 먼저 사용
+                    # SDK 내장 파서가 객체를 반환한 경우 즉시 반환
                     if hasattr(response, "parsed") and response.parsed is not None:
                         print(f"[LLM 성공] {model_id} 모델로 생성 완료 (Parsed)")
                         return response.parsed
@@ -129,7 +143,6 @@ class LLMClient:
                 except (ValidationError, json.JSONDecodeError) as e:
                     print(f"[LLM 스키마/잘림 에러] {model_id}: {e}")
                     last_exception = e
-                    # 잘림이나 스키마 에러는 동일 모델 재시도 없이 다음 예비 모델로 즉시 전환
                     break
 
         raise BedrockAPIError(f"모든 후보 모델 호출 실패: {last_exception}")
