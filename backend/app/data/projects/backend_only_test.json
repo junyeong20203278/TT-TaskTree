@@ -1,0 +1,31 @@
+{
+  "project_name": "스마트 캠핑카 대여 시스템",
+  "duration_weeks": 8,
+  "nodes": [
+    {
+      "id": "node-1",
+      "type": "task",
+      "data": {
+        "label": "요구사항 정의 및 분석",
+        "week": 1,
+        "category": "기획"
+      }
+    },
+    {
+      "id": "node-2",
+      "type": "gate",
+      "data": {
+        "label": "DB 스키마 및 아키텍처 확정",
+        "week": 2,
+        "category": "설계"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1-2",
+      "source": "node-1",
+      "target": "node-2"
+    }
+  ]
+}
